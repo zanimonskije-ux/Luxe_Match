@@ -243,7 +243,7 @@ export default function App() {
     return (
       <div className="h-screen w-full bg-onyx flex flex-col items-center justify-center p-8 text-center">
         <Sparkles size={64} className="text-gold mb-8 animate-pulse" />
-        <h1 className="text-3xl font-serif font-bold mb-4">Luxe Match</h1>
+        <h1 className="text-3xl font-serif font-bold mb-4">Luxe Match Bot</h1>
         <div className="w-8 h-8 border-2 border-gold border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -273,7 +273,7 @@ export default function App() {
     return (
       <div className="h-screen w-full bg-onyx flex flex-col items-center justify-center p-8 text-center">
         <Sparkles size={64} className="text-gold mb-8 animate-pulse" />
-        <h1 className="text-3xl font-serif font-bold mb-4">Luxe Match</h1>
+        <h1 className="text-3xl font-serif font-bold mb-4">Luxe Match Bot</h1>
         <p className="text-white/60 mb-8 max-w-xs">
           Этот эксклюзивный опыт доступен только внутри Telegram.
         </p>
@@ -300,7 +300,7 @@ export default function App() {
             className="fixed inset-0 z-[60] bg-onyx flex flex-col items-center justify-center p-8 text-center"
           >
             <Sparkles size={64} className="text-gold mb-8" />
-            <h2 className="text-4xl font-serif font-bold mb-4">Добро пожаловать в Luxe</h2>
+            <h2 className="text-4xl font-serif font-bold mb-4">Добро пожаловать в Luxe Match Bot</h2>
             <p className="text-white/60 mb-10 max-w-xs">
               Чтобы войти в мир эксклюзивных знакомств, пожалуйста, заполните свой профиль.
             </p>
@@ -326,7 +326,7 @@ export default function App() {
         
         <div className="flex items-center gap-2">
           <Sparkles size={20} className="text-gold" />
-          <h1 className="text-xl font-serif font-bold tracking-widest uppercase">Luxe Match</h1>
+          <h1 className="text-xl font-serif font-bold tracking-widest uppercase">Luxe Match Bot</h1>
         </div>
 
         <button className="p-2 text-white/40 hover:text-white transition-colors relative">

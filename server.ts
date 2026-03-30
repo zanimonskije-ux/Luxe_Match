@@ -72,10 +72,12 @@ if (bot) {
 
     if (text === '/start') {
       if (user.name) {
+        bot.sendMessage(chatId, `С возвращением в *Luxe Match Bot*, ${user.name}!`, { parse_mode: 'Markdown' });
         showMainMenu(chatId);
       } else {
         user.state = 'naming';
-        bot.sendMessage(chatId, "👋 *Добро пожаловать в Luxe Match!*\n\nДавайте создадим вашу анкету. Как вас зовут?", { parse_mode: 'Markdown' });
+        saveUsers();
+        bot.sendMessage(chatId, "👋 *Добро пожаловать в Luxe Match Bot!*\n\nДавайте создадим вашу анкету. Как вас зовут?", { parse_mode: 'Markdown' });
       }
       return;
     }
@@ -222,7 +224,8 @@ function showNextProfile(chatId: number) {
     u.id !== chatId && 
     !user.likes.includes(u.id) && 
     !user.dislikes.includes(u.id) &&
-    u.name // Only registered users
+    u.name && // Only registered users
+    u.age >= user.age - 2 && u.age <= user.age + 2 // Age filter: ±2 years
   );
 
   if (potential.length === 0) {

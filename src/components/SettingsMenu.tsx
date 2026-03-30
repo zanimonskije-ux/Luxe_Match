@@ -99,7 +99,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
         </div>
 
         <p className="text-center text-[10px] uppercase tracking-[0.2em] text-white/20 mt-10">
-          Luxe Match v1.0.4 • Сделано с любовью
+          Luxe Match Bot v1.0.4 • Сделано с любовью
         </p>
       </motion.div>
 
