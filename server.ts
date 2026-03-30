@@ -1,0 +1,301 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import TelegramBot from "node-telegram-bot-api";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const token = process.env.TELEGRAM_BOT_TOKEN;
+const devUrl = process.env.APP_URL;
+
+if (!token) {
+  console.warn("TELEGRAM_BOT_TOKEN is not set. Bot features will be disabled.");
+}
+
+// Simple in-memory database (replaces localStorage/Firebase for the bot)
+interface UserProfile {
+  id: number;
+  name: string;
+  username?: string;
+  age: number;
+  bio: string;
+  photo?: string;
+  likes: number[];
+  dislikes: number[];
+  matches: number[];
+  state: 'idle' | 'naming' | 'aging' | 'bioing' | 'photoing' | 'searching';
+  currentSearchIndex?: number;
+}
+
+const usersFile = path.join(process.cwd(), 'database.json');
+let users: Record<number, UserProfile> = {};
+
+if (fs.existsSync(usersFile)) {
+  try {
+    const data = JSON.parse(fs.readFileSync(usersFile, 'utf-8'));
+    // Convert string keys back to numbers if necessary, though JS handles this mostly fine
+    users = data;
+    console.log(`Loaded ${Object.keys(users).length} users from database.`);
+  } catch (e) {
+    console.error("Failed to load database:", e);
+    users = {};
+  }
+}
+
+function saveUsers() {
+  fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+}
+
+const bot = token ? new TelegramBot(token, { polling: true }) : null;
+
+if (bot) {
+  bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+    const user = users[chatId] || { 
+      id: chatId, 
+      name: '', 
+      username: msg.from?.username,
+      age: 0, 
+      bio: '', 
+      likes: [], 
+      dislikes: [], 
+      matches: [], 
+      state: 'idle' 
+    };
+    if (msg.from?.username) user.username = msg.from.username;
+    users[chatId] = user;
+    saveUsers();
+
+    if (text === '/start') {
+      if (user.name) {
+        showMainMenu(chatId);
+      } else {
+        user.state = 'naming';
+        bot.sendMessage(chatId, "👋 *Добро пожаловать в Luxe Match!*\n\nДавайте создадим вашу анкету. Как вас зовут?", { parse_mode: 'Markdown' });
+      }
+      return;
+    }
+
+    // Registration Flow
+    if (user.state === 'naming') {
+      user.name = text || '';
+      user.state = 'aging';
+      saveUsers();
+      bot.sendMessage(chatId, `Приятно познакомиться, ${user.name}! Сколько вам лет?`);
+      return;
+    }
+
+    if (user.state === 'aging') {
+      const age = parseInt(text || '0');
+      if (isNaN(age) || age < 18 || age > 99) {
+        bot.sendMessage(chatId, "Пожалуйста, введите корректный возраст (число от 18 до 99).");
+        return;
+      }
+      user.age = age;
+      user.state = 'bioing';
+      saveUsers();
+      bot.sendMessage(chatId, "Расскажите немного о себе (ваше хобби, интересы или что вы ищете):");
+      return;
+    }
+
+    if (user.state === 'bioing') {
+      user.bio = text || '';
+      user.state = 'photoing';
+      saveUsers();
+      bot.sendMessage(chatId, "Отлично! Теперь отправьте ваше лучшее фото для анкеты:");
+      return;
+    }
+
+    if (user.state === 'photoing' && msg.photo) {
+      const photoId = msg.photo[msg.photo.length - 1].file_id;
+      user.photo = photoId;
+      user.state = 'idle';
+      saveUsers();
+      bot.sendMessage(chatId, "✅ Анкета создана! Теперь вы можете искать пару.");
+      showMainMenu(chatId);
+      return;
+    }
+
+    // Commands handling
+    if (text === '🔍 Искать') {
+      user.state = 'searching';
+      saveUsers();
+      showNextProfile(chatId);
+    } else if (text === '👤 Моя анкета') {
+      showMyProfile(chatId);
+    } else if (text === '❤️ Пары') {
+      showMatches(chatId);
+    }
+  });
+
+  bot.on('callback_query', async (query) => {
+    const chatId = query.message?.chat.id;
+    if (!chatId) return;
+    const user = users[chatId];
+    const data = query.data;
+
+    if (data?.startsWith('like_')) {
+      const targetId = parseInt(data.split('_')[1]);
+      user.likes.push(targetId);
+      
+      // Check for match
+      if (users[targetId]?.likes.includes(chatId)) {
+        const target = users[targetId];
+        user.matches.push(targetId);
+        target.matches.push(chatId);
+        
+        const userLink = user.username ? `@${user.username}` : `[${user.name}](tg://user?id=${user.id})`;
+        const targetLink = target.username ? `@${target.username}` : `[${target.name}](tg://user?id=${target.id})`;
+
+        bot.sendMessage(chatId, `🎉 *Это взаимно!*\n\nВаша пара: *${target.name}*\nНапишите прямо сейчас: ${targetLink}`, { parse_mode: 'Markdown' });
+        bot.sendMessage(targetId, `🎉 *Это взаимно!*\n\nВаша пара: *${user.name}*\nНапишите прямо сейчас: ${userLink}`, { parse_mode: 'Markdown' });
+      }
+      
+      saveUsers();
+      showNextProfile(chatId);
+    } else if (data?.startsWith('dislike_')) {
+      const targetId = parseInt(data.split('_')[1]);
+      user.dislikes.push(targetId);
+      saveUsers();
+      showNextProfile(chatId);
+    } else if (data === 'stop_search') {
+      user.state = 'idle';
+      saveUsers();
+      showMainMenu(chatId);
+    } else if (data === 'edit_profile') {
+      user.state = 'naming';
+      saveUsers();
+      bot.sendMessage(chatId, "Хорошо, давайте обновим вашу анкету. Как вас зовут?");
+    }
+
+    bot.answerCallbackQuery(query.id);
+  });
+}
+
+function showMainMenu(chatId: number) {
+  bot?.sendMessage(chatId, "Выберите действие:", {
+    reply_markup: {
+      keyboard: [
+        [{ text: '🔍 Искать' }],
+        [{ text: '👤 Моя анкета' }, { text: '❤️ Пары' }]
+      ],
+      resize_keyboard: true
+    }
+  });
+}
+
+function showMyProfile(chatId: number) {
+  const user = users[chatId];
+  
+  if (!user.name || !user.age) {
+    user.state = 'naming';
+    saveUsers();
+    bot?.sendMessage(chatId, "🤔 Ваша анкета не заполнена. Давайте это исправим!\n\nКак вас зовут?");
+    return;
+  }
+
+  const caption = `*${user.name}, ${user.age}*\n\n${user.bio}`;
+  const opts = {
+    parse_mode: 'Markdown' as const,
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '📝 Изменить анкету', callback_data: 'edit_profile' }]
+      ]
+    }
+  };
+
+  if (user.photo) {
+    bot?.sendPhoto(chatId, user.photo, { ...opts, caption });
+  } else {
+    bot?.sendMessage(chatId, caption, opts);
+  }
+}
+
+function showNextProfile(chatId: number) {
+  const user = users[chatId];
+  const allUsers = Object.values(users);
+  const potential = allUsers.filter(u => 
+    u.id !== chatId && 
+    !user.likes.includes(u.id) && 
+    !user.dislikes.includes(u.id) &&
+    u.name // Only registered users
+  );
+
+  if (potential.length === 0) {
+    bot?.sendMessage(chatId, "😔 Пока новых анкет нет. Зайдите позже!");
+    user.state = 'idle';
+    showMainMenu(chatId);
+    return;
+  }
+
+  const target = potential[Math.floor(Math.random() * potential.length)];
+  
+  const caption = `*${target.name}, ${target.age}*\n\n${target.bio}`;
+  const opts = {
+    parse_mode: 'Markdown' as const,
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '❤️', callback_data: `like_${target.id}` },
+          { text: '👎', callback_data: `dislike_${target.id}` }
+        ],
+        [{ text: '💤 Стоп', callback_data: 'stop_search' }]
+      ]
+    }
+  };
+
+  if (target.photo) {
+    bot?.sendPhoto(chatId, target.photo, { ...opts, caption });
+  } else {
+    bot?.sendMessage(chatId, caption, opts);
+  }
+}
+
+function showMatches(chatId: number) {
+  const user = users[chatId];
+  if (user.matches.length === 0) {
+    bot?.sendMessage(chatId, "У вас пока нет взаимных симпатий.");
+    return;
+  }
+
+  bot?.sendMessage(chatId, "💞 *Ваши взаимные симпатии:*", { parse_mode: 'Markdown' });
+  user.matches.forEach(mId => {
+    const m = users[mId];
+    const link = m.username ? `@${m.username}` : `[Профиль](tg://user?id=${m.id})`;
+    bot?.sendMessage(chatId, `👤 *${m.name}*\n🔗 ${link}`, { parse_mode: 'Markdown' });
+  });
+}
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  // Keep Vite for potential future use or fallback
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
